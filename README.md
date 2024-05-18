@@ -2,7 +2,7 @@
 
 Simple Web App to track TUB buses in real-time, using their scraped API. 
 
-See the [demo](#demo) 🎥 down below.
+Try now [here](https://darguima.github.io/TUB-Bus-Tracker/) or watch the [demo](#demo) 🎥 down below.
 
 ## What's TUB?
 
