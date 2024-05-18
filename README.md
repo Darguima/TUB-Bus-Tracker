@@ -24,7 +24,7 @@ The endpoints scraped are:
 
 | Endpoint                                                       | Description                                         |
 |----------------------------------------------------------------|-----------------------------------------------------|
-| https://mobibus-gateway.ndrive.com/busLocation/${route number} | Returns the location of all the buses on this route |
+| https://mobibus-gateway.ndrive.com/busLocation/${route number} | Returns the location of all the buses on this route. Well, you also need their key, but that you will nee to find out |
 
 ## Demo
 
