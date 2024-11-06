@@ -74,6 +74,30 @@ const updateMap = async (routes, configs) => {
     })
 }
 
+var location_permission_requested = false;
+var location_permission_granted = false;
+var already_drawing_user_location = false;
+
+const drawUserLocation = async () => {
+  if (location_permission_requested && !location_permission_granted || already_drawing_user_location) {
+    return
+  }
+
+  location_permission_requested = true
+  already_drawing_user_location = true
+
+  navigator.geolocation.getCurrentPosition((position) => {
+    location_permission_granted = true
+
+    const userMarker = L.marker([position.coords.latitude, position.coords.longitude]);
+    userMarker.addTo(map);
+
+    map.setView([position.coords.latitude, position.coords.longitude], 14);
+
+    already_drawing_user_location = false
+  })
+}
+
 const main = async (routesNumbers) => {
   var routes = []
   var configs = {
@@ -116,11 +140,10 @@ const main = async (routesNumbers) => {
   while (true) {
     routes = await updateMap(routes, configs);
 
-    console.log(routes)
-    console.log(configs)
-
     await new Promise(r => setTimeout(r, (60 / configs.refreshRate) * 1000));
+    drawUserLocation()
   }
+
 }
 
 fetch("./routes.json")
