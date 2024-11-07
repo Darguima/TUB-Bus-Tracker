@@ -29,8 +29,14 @@ const map_state = {
   }
 }
 
-const busIcon = L.icon({
-  iconUrl: './busLocation.svg',
+const inboundBusLocation = L.icon({
+  iconUrl: './inboundBusLocation.svg',
+  iconSize: [20 * map_state.iconScale, 16 * map_state.iconScale],
+  iconAnchor: [8 * map_state.iconScale, 20 * map_state.iconScale]
+});
+
+const outboundBusLocation = L.icon({
+  iconUrl: './outboundBusLocation.svg',
   iconSize: [20 * map_state.iconScale, 16 * map_state.iconScale],
   iconAnchor: [8 * map_state.iconScale, 20 * map_state.iconScale]
 });
@@ -112,7 +118,7 @@ const drawBuses = async () => {
       if (route.buses[busInfo.busId] != undefined) {
         marker = route.buses[busInfo.busId].marker
       } else {
-        marker = L.marker([bus.lat, bus.lon], { icon: busIcon });
+        marker = L.marker([bus.lat, bus.lon], { icon: bus.direction == 1 ? outboundBusLocation : inboundBusLocation });
 
         const destination = bus.direction == 1 ? route.outBoundRouteName : route.inBoundRouteName
 
