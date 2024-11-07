@@ -12,6 +12,7 @@ const map_state = {
   },
 
   iconScale: 2,
+  lastUpdateTimestamp: new Date(),
 
   routes: [],
   userMarker: undefined,
@@ -23,7 +24,8 @@ const map_state = {
 
   domComponents: {
     routesPickerSelectElem: document.getElementById("routesPickerSelect"),
-    centerUserLocationElem: document.getElementById("centerUserLocation")
+    centerUserLocationElem: document.getElementById("centerUserLocation"),
+    lastUpdateInfoElem: document.getElementById("lastUpdateInfo")
   }
 }
 
@@ -146,6 +148,8 @@ const drawBuses = async () => {
         console.log(newRoutes)
       }
 
+      map_state.lastUpdateTimestamp = new Date()
+
       map_state.routes = newRoutes
     })
 }
@@ -185,6 +189,24 @@ const drawUser = async () => {
   )
 }
 
+const updateLastUpdateInfo = () => {
+  const { lastUpdateInfoElem } = map_state.domComponents
+
+  const now = new Date();
+  const diffInSeconds = Math.floor((now - map_state.lastUpdateTimestamp) / 1000);
+  let timeString = `Last update ${diffInSeconds < 2 ? 0 : diffInSeconds} seconds ago`;
+
+  if (diffInSeconds >= 60) {
+    const diffInMinutes = Math.floor(diffInSeconds / 60);
+    let remainingSeconds = diffInSeconds % 60;
+    timeString = `Last update ${diffInMinutes}:${remainingSeconds.toString().padStart(2, '0')} min ago`;
+  }
+
+  lastUpdateInfoElem.innerHTML = timeString;
+
+  setTimeout(updateLastUpdateInfo, 1000);
+}
+
 const main = async () => {
   map_state.routes = await fetchRoutesInfo()
 
@@ -192,8 +214,12 @@ const main = async () => {
 
   drawUser()
 
+  updateLastUpdateInfo()
+
   while (true) {
-    await drawBuses();
+    try {
+      await drawBuses();
+    } catch (_) { /* To avoid kill the function after a network drop */ }
 
     await new Promise(r => setTimeout(r, (60 / BUS_UPDATES_PER_MINUTE) * 1000));
   }
