@@ -10,6 +10,12 @@ const busIcon = L.icon({
   iconAnchor: [8 * iconScale, 20 * iconScale]
 });
 
+const userIcon = L.circle({
+  iconUrl: './busLocation.svg',
+  iconSize: [20 * iconScale, 16 * iconScale],
+  iconAnchor: [8 * iconScale, 20 * iconScale]
+});
+
 const updateMap = async (routes, configs) => {
   const newRoutes = routes.map(async route => {
 
@@ -77,8 +83,9 @@ const updateMap = async (routes, configs) => {
 var location_permission_requested = false;
 var location_permission_granted = false;
 var already_drawing_user_location = false;
+var userMarker = null
 
-const drawUserLocation = async () => {
+const drawUserLocation = async (center) => {
   if (location_permission_requested && !location_permission_granted || already_drawing_user_location) {
     return
   }
@@ -89,10 +96,13 @@ const drawUserLocation = async () => {
   navigator.geolocation.getCurrentPosition((position) => {
     location_permission_granted = true
 
-    const userMarker = L.marker([position.coords.latitude, position.coords.longitude]);
-    userMarker.addTo(map);
+    if (!userMarker) {
+      userMarker = L.circleMarker([position.coords.latitude, position.coords.longitude]);
+      userMarker.addTo(map);
+    }
 
-    map.setView([position.coords.latitude, position.coords.longitude], 14);
+    const newLatLng = new L.LatLng(position.coords.latitude, position.coords.longitude);
+    userMarker.setLatLng(newLatLng);
 
     already_drawing_user_location = false
   })
@@ -126,6 +136,14 @@ const main = async (routesNumbers) => {
     configs.selectedRoute = selectedRoute == "all" ? undefined : selectedRoute;
   })
 
+  // Center User Location Button
+  const centerUserLocationButton = document.getElementById("centerUserLocation");
+  centerUserLocationButton.addEventListener("click", async () => {
+    navigator.geolocation.getCurrentPosition((position) => {
+      map.setView([position.coords.latitude, position.coords.longitude], 14);
+    })
+  })
+
   // Refresh Rate input
   const refreshRateElem = document.getElementById("refreshRate");
   refreshRateElem.value = configs.refreshRate;
@@ -137,11 +155,12 @@ const main = async (routesNumbers) => {
     refreshRateElem.value = configs.refreshRate;
   })
 
+
   while (true) {
     routes = await updateMap(routes, configs);
+    drawUserLocation()
 
     await new Promise(r => setTimeout(r, (60 / configs.refreshRate) * 1000));
-    drawUserLocation()
   }
 
 }
