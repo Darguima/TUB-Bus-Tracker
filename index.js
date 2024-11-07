@@ -1,22 +1,75 @@
+DEBUG = true
+
 var map = L.map('map').setView([41.55, -8.42], 14);
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
   attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
 }).addTo(map);
 
-const iconScale = 2
+const map_state = {
+  configs: {
+    selectedRoute: undefined,
+    refreshRate: 60
+  },
+
+  iconScale: 2,
+
+  routes: [],
+  userMarker: undefined,
+
+  userLocation: {
+    permissionsRequested: false,
+    permissionsGranted: false,
+    alreadyDrawing: false
+  },
+}
+
 const busIcon = L.icon({
   iconUrl: './busLocation.svg',
-  iconSize: [20 * iconScale, 16 * iconScale],
-  iconAnchor: [8 * iconScale, 20 * iconScale]
+  iconSize: [20 * map_state.iconScale, 16 * map_state.iconScale],
+  iconAnchor: [8 * map_state.iconScale, 20 * map_state.iconScale]
 });
 
-const userIcon = L.circle({
-  iconUrl: './busLocation.svg',
-  iconSize: [20 * iconScale, 16 * iconScale],
-  iconAnchor: [8 * iconScale, 20 * iconScale]
-});
+const addEvents = (routesNumbers) => {
+  const configs = map_state.configs
 
-const updateMap = async (routes, configs) => {
+  // Route Picker
+  const selectRouteElem = document.getElementById("routesPicker");
+  routesNumbers.forEach(routeNumber => {
+    const option = document.createElement("option");
+    option.text = `Route ${routeNumber}`;
+    option.value = routeNumber;
+    selectRouteElem.add(option);
+  })
+
+  selectRouteElem.addEventListener("change", async (event) => {
+    const selectedRoute = event.target.value;
+    configs.selectedRoute = selectedRoute == "all" ? undefined : selectedRoute;
+  })
+
+  // Refresh Rate input
+  const refreshRateElem = document.getElementById("refreshRate");
+  refreshRateElem.value = configs.refreshRate;
+  refreshRateElem.addEventListener("change", async (event) => {
+    if (event.target.value < 1) configs.refreshRate = 60;
+    else if (event.target.value > 600) configs.refreshRate = 600;
+    else configs.refreshRate = event.target.value
+
+    refreshRateElem.value = configs.refreshRate;
+  })
+
+  // Center User Location Button
+  const centerUserLocationButton = document.getElementById("centerUserLocation");
+  centerUserLocationButton.addEventListener("click", async () => {
+    navigator.geolocation.getCurrentPosition((position) => {
+      map.setView([position.coords.latitude, position.coords.longitude], 15);
+    })
+  })
+}
+
+const drawBuses = async () => {
+  const routes = map_state.routes
+  const configs = map_state.configs
+
   const newRoutes = routes.map(async route => {
 
     if (configs.selectedRoute != undefined && configs.selectedRoute != route.routeNumber) {
@@ -75,44 +128,46 @@ const updateMap = async (routes, configs) => {
   })
 
   return Promise.all(newRoutes)
-    .then(() => {
-      return routes
+    .then((newRoutes) => {
+      if (DEBUG) {
+        console.log(newRoutes)
+      }
+
+      map_state.routes = newRoutes
     })
 }
 
-var location_permission_requested = false;
-var location_permission_granted = false;
-var already_drawing_user_location = false;
-var userMarker = null
-
-const drawUserLocation = async (center) => {
-  if (location_permission_requested && !location_permission_granted || already_drawing_user_location) {
+const drawUser = async () => {
+  if (map_state.userLocation.permissionsRequested && map_state.userLocation.alreadyDrawing && !map_state.userLocation.alreadyDrawing) {
+    setTimeout(drawUser, 500)
     return
   }
 
-  location_permission_requested = true
-  already_drawing_user_location = true
+  map_state.userLocation.permissionsRequested = true
+  map_state.userLocation.alreadyDrawing = true
 
   navigator.geolocation.getCurrentPosition((position) => {
-    location_permission_granted = true
+    map_state.userLocation.permissionsGranted = true
 
-    if (!userMarker) {
-      userMarker = L.circleMarker([position.coords.latitude, position.coords.longitude]);
-      userMarker.addTo(map);
+    if (DEBUG) {
+      console.log(position)
     }
 
-    const newLatLng = new L.LatLng(position.coords.latitude, position.coords.longitude);
-    userMarker.setLatLng(newLatLng);
+    if (!map_state.userMarker) {
+      map_state.userMarker = L.circleMarker([position.coords.latitude, position.coords.longitude]);
+      map_state.userMarker.addTo(map);
+    }
 
-    already_drawing_user_location = false
+    map_state.userMarker.setLatLng(new L.LatLng(position.coords.latitude, position.coords.longitude));
+
+    map_state.userLocation.alreadyDrawing = false
   })
+
+  setTimeout(drawUser, 2000)
 }
 
 const main = async (routesNumbers) => {
-  var routes = []
-  var configs = {
-    refreshRate: 60
-  }
+  const routes = map_state.routes
 
   routesNumbers.forEach(routeNumber => {
     routes.push({
@@ -121,48 +176,15 @@ const main = async (routesNumbers) => {
     })
   })
 
-  // Route Picker
-  const selectRouteElem = document.getElementById("routesPicker");
-  configs.selectedRoute = undefined
-  routesNumbers.forEach(routeNumber => {
-    const option = document.createElement("option");
-    option.text = `Route ${routeNumber}`;
-    option.value = routeNumber;
-    selectRouteElem.add(option);
-  })
+  addEvents(routesNumbers)
 
-  selectRouteElem.addEventListener("change", async (event) => {
-    const selectedRoute = event.target.value;
-    configs.selectedRoute = selectedRoute == "all" ? undefined : selectedRoute;
-  })
-
-  // Center User Location Button
-  const centerUserLocationButton = document.getElementById("centerUserLocation");
-  centerUserLocationButton.addEventListener("click", async () => {
-    navigator.geolocation.getCurrentPosition((position) => {
-      map.setView([position.coords.latitude, position.coords.longitude], 14);
-    })
-  })
-
-  // Refresh Rate input
-  const refreshRateElem = document.getElementById("refreshRate");
-  refreshRateElem.value = configs.refreshRate;
-  refreshRateElem.addEventListener("change", async (event) => {
-    if (event.target.value < 1) configs.refreshRate = 60;
-    else if (event.target.value > 600) configs.refreshRate = 600;
-    else configs.refreshRate = event.target.value
-
-    refreshRateElem.value = configs.refreshRate;
-  })
-
+  drawUser()
 
   while (true) {
-    routes = await updateMap(routes, configs);
-    drawUserLocation()
+    await drawBuses();
 
-    await new Promise(r => setTimeout(r, (60 / configs.refreshRate) * 1000));
+    await new Promise(r => setTimeout(r, (60 / map_state.configs.refreshRate) * 1000));
   }
-
 }
 
 fetch("./routes.json")
