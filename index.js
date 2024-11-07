@@ -22,7 +22,7 @@ const map_state = {
   },
 
   domComponents: {
-    routesPickerElem: document.getElementById("routesPicker"),
+    routesPickerSelectElem: document.getElementById("routesPickerSelect"),
     centerUserLocationElem: document.getElementById("centerUserLocation")
   }
 }
@@ -54,17 +54,17 @@ const addEvents = () => {
   const configs = map_state.configs
   const routesNumbers = map_state.routes.map(route => route.routeNumber)
 
-  const { routesPickerElem, centerUserLocationElem } = map_state.domComponents
+  const { routesPickerSelectElem, centerUserLocationElem } = map_state.domComponents
 
   // Route Picker
   routesNumbers.forEach(routeNumber => {
     const option = document.createElement("option");
     option.text = `Route ${routeNumber}`;
     option.value = routeNumber;
-    routesPickerElem.add(option);
+    routesPickerSelectElem.add(option);
   })
 
-  routesPickerElem.addEventListener("change", async (event) => {
+  routesPickerSelectElem.addEventListener("change", async (event) => {
     const selectedRoute = event.target.value;
     configs.selectedRoute = selectedRoute == "all" ? undefined : selectedRoute;
   })

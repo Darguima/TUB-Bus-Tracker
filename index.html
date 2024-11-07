@@ -20,32 +20,8 @@
       width: 100vw;
     }
 
-    #panel {
+    .floatingButtons {
       position: absolute;
-      top: 10px;
-      right: 10px;
-      z-index: 1000;
-      background-color: white;
-      padding: 10px;
-      border-radius: 5px;
-      box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
-    }
-
-    #panel th {
-      text-align: left;
-      padding: 4px;
-    }
-
-    #panel th * {
-      width: 100%;
-    }
-
-    #centerUserLocation {
-      position: absolute;
-      bottom: 20px;
-      right: 10px;
-      height: 24px;
-      width: 24px;
       z-index: 1000;
       background-color: white;
       padding: 10px;
@@ -53,28 +29,52 @@
       box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
       cursor: pointer;
     }
+
+    #routesPicker {
+      top: 10px;
+      right: 10px;
+
+      display: flex;
+      align-items: center;
+    }
+
+    #routesPickerSelect {
+      all: unset;
+      padding-right: 24px;
+      z-index: 1002;
+    }
+
+    #routesPickerIcon {
+      position: absolute;
+      right: 8px;
+      z-index: 1001;
+    }
+
+    #centerUserLocation {
+      height: 24px;
+      bottom: 20px;
+      right: 10px;
+    }
   </style>
 </head>
 
 <body>
   <div id="map"></div>
-  <div id="panel">
-    <table>
 
-      <tr>
-        <th>
-          <label>Select Route:</label>
-        </th>
-        <th>
-          <select id="routesPicker">
-            <option value="all">All Routes</option>
-          </select>
-        </th>
-      </tr>
-    </table>
+  <div class="floatingButtons" id="routesPicker">
+
+    <select id="routesPickerSelect">
+      <option value="all">All Routes</option>
+    </select>
+
+    <svg id="routesPickerIcon" xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="#000000">
+      <path
+        d="M440-160q-17 0-28.5-11.5T400-200v-240L168-736q-15-20-4.5-42t36.5-22h560q26 0 36.5 22t-4.5 42L560-440v240q0 17-11.5 28.5T520-160h-80Zm40-308 198-252H282l198 252Zm0 0Z" />
+    </svg>
+
   </div>
 
-  <div id="centerUserLocation">
+  <div class="floatingButtons" id="centerUserLocation">
     <svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="#000000">
       <path
         d="M440-42v-80q-125-14-214.5-103.5T122-440H42v-80h80q14-125 103.5-214.5T440-838v-80h80v80q125 14 214.5 103.5T838-520h80v80h-80q-14 125-103.5 214.5T520-122v80h-80Zm40-158q116 0 198-82t82-198q0-116-82-198t-198-82q-116 0-198 82t-82 198q0 116 82 198t198 82Zm0-120q-66 0-113-47t-47-113q0-66 47-113t113-47q66 0 113 47t47 113q0 66-47 113t-113 47Zm0-80q33 0 56.5-23.5T560-480q0-33-23.5-56.5T480-560q-33 0-56.5 23.5T400-480q0 33 23.5 56.5T480-400Zm0-80Z" />
