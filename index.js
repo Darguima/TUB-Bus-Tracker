@@ -1,4 +1,5 @@
 DEBUG = false
+BUS_UPDATES_PER_MINUTE = 60
 
 var map = L.map('map').setView([41.55, -8.42], 14);
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
@@ -8,7 +9,6 @@ L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
 const map_state = {
   configs: {
     selectedRoute: undefined,
-    refreshRate: 60
   },
 
   iconScale: 2,
@@ -23,7 +23,6 @@ const map_state = {
 
   domComponents: {
     routesPickerElem: document.getElementById("routesPicker"),
-    refreshRateElem: document.getElementById("refreshRate"),
     centerUserLocationElem: document.getElementById("centerUserLocation")
   }
 }
@@ -55,7 +54,7 @@ const addEvents = () => {
   const configs = map_state.configs
   const routesNumbers = map_state.routes.map(route => route.routeNumber)
 
-  const { routesPickerElem, refreshRateElem, centerUserLocationElem } = map_state.domComponents
+  const { routesPickerElem, centerUserLocationElem } = map_state.domComponents
 
   // Route Picker
   routesNumbers.forEach(routeNumber => {
@@ -68,16 +67,6 @@ const addEvents = () => {
   routesPickerElem.addEventListener("change", async (event) => {
     const selectedRoute = event.target.value;
     configs.selectedRoute = selectedRoute == "all" ? undefined : selectedRoute;
-  })
-
-  // Refresh Rate input
-  refreshRateElem.value = configs.refreshRate;
-  refreshRateElem.addEventListener("change", async (event) => {
-    if (event.target.value < 1) configs.refreshRate = 60;
-    else if (event.target.value > 600) configs.refreshRate = 600;
-    else configs.refreshRate = event.target.value
-
-    refreshRateElem.value = configs.refreshRate;
   })
 
   // Center User Location Button
@@ -206,7 +195,7 @@ const main = async () => {
   while (true) {
     await drawBuses();
 
-    await new Promise(r => setTimeout(r, (60 / map_state.configs.refreshRate) * 1000));
+    await new Promise(r => setTimeout(r, (60 / BUS_UPDATES_PER_MINUTE) * 1000));
   }
 }
 
