@@ -1,4 +1,4 @@
-DEBUG = true
+DEBUG = false
 
 var map = L.map('map').setView([41.55, -8.42], 14);
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
@@ -18,9 +18,14 @@ const map_state = {
 
   userLocation: {
     permissionsRequested: false,
-    permissionsGranted: false,
-    alreadyDrawing: false
+    permissionsGranted: false
   },
+
+  domComponents: {
+    routesPickerElem: document.getElementById("routesPicker"),
+    refreshRateElem: document.getElementById("refreshRate"),
+    centerUserLocationElem: document.getElementById("centerUserLocation")
+  }
 }
 
 const busIcon = L.icon({
@@ -29,25 +34,43 @@ const busIcon = L.icon({
   iconAnchor: [8 * map_state.iconScale, 20 * map_state.iconScale]
 });
 
-const addEvents = (routesNumbers) => {
+const fetchRoutesInfo = async () => {
+  return fetch("./routes.json")
+    .then(response => response.json())
+    .then(routesInfo => {
+      return Object.values(routesInfo).map(route => {
+        const routesNames = route[1].split(" - ").map(name => name.trim())
+
+        return {
+          routeNumber: route[0],
+          inBoundRouteName: routesNames[0],
+          outBoundRouteName: routesNames[1] || routesNames[0],
+          buses: {}
+        }
+      })
+    })
+}
+
+const addEvents = () => {
   const configs = map_state.configs
+  const routesNumbers = map_state.routes.map(route => route.routeNumber)
+
+  const { routesPickerElem, refreshRateElem, centerUserLocationElem } = map_state.domComponents
 
   // Route Picker
-  const selectRouteElem = document.getElementById("routesPicker");
   routesNumbers.forEach(routeNumber => {
     const option = document.createElement("option");
     option.text = `Route ${routeNumber}`;
     option.value = routeNumber;
-    selectRouteElem.add(option);
+    routesPickerElem.add(option);
   })
 
-  selectRouteElem.addEventListener("change", async (event) => {
+  routesPickerElem.addEventListener("change", async (event) => {
     const selectedRoute = event.target.value;
     configs.selectedRoute = selectedRoute == "all" ? undefined : selectedRoute;
   })
 
   // Refresh Rate input
-  const refreshRateElem = document.getElementById("refreshRate");
   refreshRateElem.value = configs.refreshRate;
   refreshRateElem.addEventListener("change", async (event) => {
     if (event.target.value < 1) configs.refreshRate = 60;
@@ -58,8 +81,7 @@ const addEvents = (routesNumbers) => {
   })
 
   // Center User Location Button
-  const centerUserLocationButton = document.getElementById("centerUserLocation");
-  centerUserLocationButton.addEventListener("click", async () => {
+  centerUserLocationElem.addEventListener("click", async () => {
     navigator.geolocation.getCurrentPosition((position) => {
       map.setView([position.coords.latitude, position.coords.longitude], 15);
     })
@@ -71,7 +93,6 @@ const drawBuses = async () => {
   const configs = map_state.configs
 
   const newRoutes = routes.map(async route => {
-
     if (configs.selectedRoute != undefined && configs.selectedRoute != route.routeNumber) {
       Object.keys(route.buses).forEach(busId => {
         map.removeLayer(route.buses[busId].marker)
@@ -80,7 +101,7 @@ const drawBuses = async () => {
       return route
     }
 
-    const routesInfo = await (await fetch(`https://mobibus-gateway.ndrive.com/busLocation/${route.routeNumber}`, {
+    const busesOnRouteInfo = await (await fetch(`https://mobibus-gateway.ndrive.com/busLocation/${route.routeNumber}`, {
       method: 'GET',
       headers: {
         'apikey': 'XfBl068e3CQLECHKTwuzH0IYG6q4AMQaxwghm7clCJi036Y/xNxHKA=='
@@ -89,10 +110,11 @@ const drawBuses = async () => {
 
     const buses = {};
 
-    routesInfo.forEach(busInfo => {
+    busesOnRouteInfo.forEach(busInfo => {
       const bus = {
         lat: busInfo.lat,
-        lon: busInfo.lon
+        lon: busInfo.lon,
+        direction: busInfo.direction
       }
 
       var marker;
@@ -101,7 +123,9 @@ const drawBuses = async () => {
       } else {
         marker = L.marker([bus.lat, bus.lon], { icon: busIcon });
 
-        marker.bindTooltip(`Bus ${route.routeNumber}`, {
+        const destination = bus.direction == 1 ? route.outBoundRouteName : route.inBoundRouteName
+
+        marker.bindTooltip(`${route.routeNumber} - ${destination}`, {
           permanent: false,
           direction: "bottom"
         });
@@ -138,45 +162,44 @@ const drawBuses = async () => {
 }
 
 const drawUser = async () => {
-  if (map_state.userLocation.permissionsRequested && map_state.userLocation.alreadyDrawing && !map_state.userLocation.alreadyDrawing) {
-    setTimeout(drawUser, 500)
+  if (map_state.userLocation.permissionsRequested && !map_state.userLocation.permissionsGranted) {
     return
   }
 
   map_state.userLocation.permissionsRequested = true
-  map_state.userLocation.alreadyDrawing = true
 
-  navigator.geolocation.getCurrentPosition((position) => {
-    map_state.userLocation.permissionsGranted = true
+  navigator.geolocation.getCurrentPosition(
+    (position) => {
+      map_state.userLocation.permissionsGranted = true
 
-    if (DEBUG) {
-      console.log(position)
+      if (DEBUG) {
+        console.log(position)
+      }
+
+      if (!map_state.userMarker) {
+        map_state.userMarker = L.circleMarker([position.coords.latitude, position.coords.longitude]);
+        map_state.userMarker.addTo(map);
+      }
+
+      map_state.userMarker.setLatLng(new L.LatLng(position.coords.latitude, position.coords.longitude));
+
+      setTimeout(drawUser, 2000)
+    },
+    (error) => {
+      if (error != "User denied Geolocation") {
+        map_state.userLocation.permissionsGranted = false
+      } else {
+        map_state.userLocation.permissionsGranted = true
+        setTimeout(drawUser, 2000)
+      }
     }
-
-    if (!map_state.userMarker) {
-      map_state.userMarker = L.circleMarker([position.coords.latitude, position.coords.longitude]);
-      map_state.userMarker.addTo(map);
-    }
-
-    map_state.userMarker.setLatLng(new L.LatLng(position.coords.latitude, position.coords.longitude));
-
-    map_state.userLocation.alreadyDrawing = false
-  })
-
-  setTimeout(drawUser, 2000)
+  )
 }
 
-const main = async (routesNumbers) => {
-  const routes = map_state.routes
+const main = async () => {
+  map_state.routes = await fetchRoutesInfo()
 
-  routesNumbers.forEach(routeNumber => {
-    routes.push({
-      routeNumber: routeNumber,
-      buses: {}
-    })
-  })
-
-  addEvents(routesNumbers)
+  addEvents()
 
   drawUser()
 
@@ -187,9 +210,4 @@ const main = async (routesNumbers) => {
   }
 }
 
-fetch("./routes.json")
-  .then(response => response.json())
-  .then(data => {
-    main(Object.keys(data))
-  });
-
+main()
