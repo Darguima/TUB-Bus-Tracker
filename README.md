@@ -2,7 +2,7 @@
 <br />
 <div align="center">
   <a href="https://github.com/darguima/TUB-Bus-Tracker">
-    <img src="./logo.svg" alt="TUB Bus Tracker thumbnail" width="200px">
+    <img src="./readme/logo.svg" alt="TUB Bus Tracker thumbnail" width="150px">
   </a>
 
   <h3 align="center">TUB Bus Tracker</h3>

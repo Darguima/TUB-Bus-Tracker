@@ -1,21 +1,23 @@
-DEBUG = false
-BUS_UPDATES_PER_MINUTE = 60
+UPDATES_PER_SECOND = 1
 
 var map = L.map('map').setView([41.55, -8.42], 14);
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
   attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
 }).addTo(map);
 
-const map_state = {
-  configs: {
-    selectedRoute: undefined,
-  },
+const mapState = {
+  routes: Promise.resolve(undefined),
+  routesMap: Promise.resolve(undefined),
 
-  iconScale: 2,
   lastUpdateTimestamp: new Date(),
 
-  routes: [],
-  userMarker: undefined,
+  busIconScale: 2,
+
+  pickerSelectedRoute: undefined,
+  selectedBusNumber: undefined,
+
+  userLocationMarkerLayer: undefined,
+  helpingRouteLayer: undefined,
 
   userLocation: {
     permissionsRequested: false,
@@ -30,19 +32,19 @@ const map_state = {
 }
 
 const inboundBusLocation = L.icon({
-  iconUrl: './inboundBusLocation.svg',
-  iconSize: [20 * map_state.iconScale, 16 * map_state.iconScale],
-  iconAnchor: [8 * map_state.iconScale, 20 * map_state.iconScale]
+  iconUrl: './assets/inboundBusLocation.svg',
+  iconSize: [20 * mapState.busIconScale, 16 * mapState.busIconScale],
+  iconAnchor: [8 * mapState.busIconScale, 20 * mapState.busIconScale]
 });
 
 const outboundBusLocation = L.icon({
-  iconUrl: './outboundBusLocation.svg',
-  iconSize: [20 * map_state.iconScale, 16 * map_state.iconScale],
-  iconAnchor: [8 * map_state.iconScale, 20 * map_state.iconScale]
+  iconUrl: './assets/outboundBusLocation.svg',
+  iconSize: [20 * mapState.busIconScale, 16 * mapState.busIconScale],
+  iconAnchor: [8 * mapState.busIconScale, 20 * mapState.busIconScale]
 });
 
 const fetchRoutesInfo = async () => {
-  return fetch("./routes.json")
+  return fetch("./assets/routes.json")
     .then(response => response.json())
     .then(routesInfo => {
       return Object.values(routesInfo).map(route => {
@@ -58,11 +60,48 @@ const fetchRoutesInfo = async () => {
     })
 }
 
-const addEvents = () => {
-  const configs = map_state.configs
-  const routesNumbers = map_state.routes.map(route => route.routeNumber)
+const fetchRoutesMap = async () => {
+  return fetch("./assets/routesMap.json")
+    .then(response => response.json())
+    .then(routesInfo => {
 
-  const { routesPickerSelectElem, centerUserLocationElem } = map_state.domComponents
+      const geoJsonMaps = routesInfo.features.reduce((geoJsonMaps, feature) => {
+        const routeNumber = feature.properties?.Name?.split("_")[0];
+
+        if (!geoJsonMaps[routeNumber]) {
+          geoJsonMaps[routeNumber] = {
+            type: "FeatureCollection",
+            features: []
+          };
+        }
+
+        geoJsonMaps[routeNumber].features.push(feature);
+        return geoJsonMaps;
+      }, {})
+
+      const layersMap = Object.keys(geoJsonMaps).reduce((layersMap, routeNumber) => {
+
+        layersMap[routeNumber] = L.geoJSON(geoJsonMaps[routeNumber], {
+          style: function (feature) {
+            const styleUrl = feature.properties?.styleUrl || '';
+            let color = '#0000ff'; // default blue
+            if (styleUrl.includes('red')) color = '#ff0000';
+            return { color, weight: 3 };
+          }
+        });
+
+        return layersMap;
+
+      }, {})
+
+      return layersMap;
+    })
+}
+
+const prepareDOM = () => {
+  const routesNumbers = mapState.routes.map(route => route.routeNumber);
+
+  const { routesPickerSelectElem, centerUserLocationElem } = mapState.domComponents
 
   // Route Picker
   routesNumbers.forEach(routeNumber => {
@@ -74,7 +113,9 @@ const addEvents = () => {
 
   routesPickerSelectElem.addEventListener("change", async (event) => {
     const selectedRoute = event.target.value;
-    configs.selectedRoute = selectedRoute == "all" ? undefined : selectedRoute;
+    mapState.pickerSelectedRoute = selectedRoute == "all" ? undefined : selectedRoute;
+    mapState.selectedBusNumber = undefined;
+    drawHelpingRoute();
   })
 
   // Center User Location Button
@@ -85,12 +126,42 @@ const addEvents = () => {
   })
 }
 
+const drawUserLocation = async () => {
+  if (mapState.userLocation.permissionsRequested && !mapState.userLocation.permissionsGranted) {
+    return
+  }
+
+  mapState.userLocation.permissionsRequested = true
+
+  navigator.geolocation.getCurrentPosition(
+    (position) => {
+      mapState.userLocation.permissionsGranted = true
+
+      if (!mapState.userLocationMarkerLayer) {
+        mapState.userLocationMarkerLayer = L.circleMarker([position.coords.latitude, position.coords.longitude]);
+        mapState.userLocationMarkerLayer.addTo(map);
+      }
+
+      mapState.userLocationMarkerLayer.setLatLng(new L.LatLng(position.coords.latitude, position.coords.longitude));
+
+      setTimeout(drawUserLocation, 2000)
+    },
+    (error) => {
+      if (error != "User denied Geolocation") {
+        mapState.userLocation.permissionsGranted = false
+      } else {
+        mapState.userLocation.permissionsGranted = true
+        setTimeout(drawUserLocation, 2000)
+      }
+    }
+  )
+}
+
 const drawBuses = async () => {
-  const routes = map_state.routes
-  const configs = map_state.configs
+  const routes = mapState.routes
 
   const newRoutes = routes.map(async route => {
-    if (configs.selectedRoute != undefined && configs.selectedRoute != route.routeNumber) {
+    if (mapState.pickerSelectedRoute != undefined && mapState.pickerSelectedRoute != route.routeNumber) {
       Object.keys(route.buses).forEach(busId => {
         map.removeLayer(route.buses[busId].marker)
       })
@@ -126,6 +197,22 @@ const drawBuses = async () => {
           permanent: false,
           direction: "bottom"
         });
+
+        marker.on('click', _ => {
+          if (mapState.selectedBusNumber === busInfo.busId) {
+            mapState.selectedBusNumber = undefined;
+            drawHelpingRoute();
+          } else {
+            mapState.selectedBusNumber = busInfo.busId;
+            drawHelpingRoute(route.routeNumber);
+          }
+
+        });
+      }
+
+      marker.setOpacity(1.0);
+      if (mapState.selectedBusNumber && mapState.selectedBusNumber !== busInfo.busId) {
+        marker.setOpacity(0.3);
       }
 
       marker.setLatLng([bus.lat, bus.lon])
@@ -150,56 +237,33 @@ const drawBuses = async () => {
 
   return Promise.all(newRoutes)
     .then((newRoutes) => {
-      if (DEBUG) {
-        console.log(newRoutes)
-      }
+      mapState.lastUpdateTimestamp = new Date()
 
-      map_state.lastUpdateTimestamp = new Date()
-
-      map_state.routes = newRoutes
+      mapState.routes = newRoutes
     })
 }
 
-const drawUser = async () => {
-  if (map_state.userLocation.permissionsRequested && !map_state.userLocation.permissionsGranted) {
-    return
+const drawHelpingRoute = async (routeNumber) => {
+  const routeToDraw = mapState.pickerSelectedRoute || routeNumber;
+
+  if (mapState.helpingRouteLayer) {
+    map.removeLayer(mapState.helpingRouteLayer);
+    mapState.helpingRouteLayer = undefined;
   }
 
-  map_state.userLocation.permissionsRequested = true
+  const routesMap = (await mapState.routesMap);
 
-  navigator.geolocation.getCurrentPosition(
-    (position) => {
-      map_state.userLocation.permissionsGranted = true
-
-      if (DEBUG) {
-        console.log(position)
-      }
-
-      if (!map_state.userMarker) {
-        map_state.userMarker = L.circleMarker([position.coords.latitude, position.coords.longitude]);
-        map_state.userMarker.addTo(map);
-      }
-
-      map_state.userMarker.setLatLng(new L.LatLng(position.coords.latitude, position.coords.longitude));
-
-      setTimeout(drawUser, 2000)
-    },
-    (error) => {
-      if (error != "User denied Geolocation") {
-        map_state.userLocation.permissionsGranted = false
-      } else {
-        map_state.userLocation.permissionsGranted = true
-        setTimeout(drawUser, 2000)
-      }
-    }
-  )
+  if (routeToDraw && routesMap) {
+    mapState.helpingRouteLayer = routesMap[routeToDraw];
+    mapState.helpingRouteLayer?.addTo(map);
+  }
 }
 
 const updateLastUpdateInfo = () => {
-  const { lastUpdateInfoElem } = map_state.domComponents
+  const { lastUpdateInfoElem } = mapState.domComponents
 
   const now = new Date();
-  const diffInSeconds = Math.floor((now - map_state.lastUpdateTimestamp) / 1000);
+  const diffInSeconds = Math.floor((now - mapState.lastUpdateTimestamp) / 1000);
   let timeString = `Last update ${diffInSeconds < 2 ? 0 : diffInSeconds} seconds ago`;
 
   if (diffInSeconds >= 60) {
@@ -214,11 +278,14 @@ const updateLastUpdateInfo = () => {
 }
 
 const main = async () => {
-  map_state.routes = await fetchRoutesInfo()
 
-  addEvents()
+  drawUserLocation()
 
-  drawUser()
+  mapState.routes = await fetchRoutesInfo()
+  mapState.routesMap = fetchRoutesMap()
+
+  prepareDOM()
+
 
   updateLastUpdateInfo()
 
@@ -227,7 +294,7 @@ const main = async () => {
       await drawBuses();
     } catch (_) { /* To avoid kill the function after a network drop */ }
 
-    await new Promise(r => setTimeout(r, (60 / BUS_UPDATES_PER_MINUTE) * 1000));
+    await new Promise(r => setTimeout(r, UPDATES_PER_SECOND * 1000));
   }
 }
 
