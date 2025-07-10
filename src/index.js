@@ -177,6 +177,7 @@ const prepareDOM = () => {
   routesNumbers.forEach(routeNumber => {
     const option = document.createElement("option");
     option.text = `Route ${routeNumber}`;
+    option.label = `Route ${routeNumber}`;
     option.value = routeNumber;
     routesPickerSelectElem.add(option);
   })
