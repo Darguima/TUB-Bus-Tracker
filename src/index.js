@@ -5,9 +5,45 @@ L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
   attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
 }).addTo(map);
 
+/**
+ * @typedef {Object} RouteInfo
+ * @property {string} routeNumber
+ * @property {string} inBoundRouteName
+ * @property {string} outBoundRouteName
+ */
+
+/**
+ * @typedef {Object} BusesLocations
+ * @property {string} busId
+ * @property {number} lat
+ * @property {number} lon
+ * @property {number} direction
+ */
+
+/**
+ * @typedef {Object} Route
+ * @property {int} routeNumber
+ * @property {RouteInfo} routeInfo
+ * @property {Promise<L.GeoJSON>} routeMap
+ * @property {BusesLocations} busesLocations
+ * @property {{ [busId: string]: L.Marker }} busesMarkers
+ */
+
+/** * @typedef {Object} MapState
+ * @property {{ [routeId: string]: Route }} routes
+ * @property {Date} lastUpdateTimestamp
+ * @property {number} busIconScale
+ * @property {string | undefined} pickerSelectedRoute
+ * @property {string | undefined} selectedBusNumber
+ * @property {L.Layer | undefined} userLocationMarkerLayer
+ * @property {L.Layer | undefined} helpingRouteLayer
+ * @property {{ permissionsRequested: boolean, permissionsGranted: boolean }} userLocation
+ * @property {{ routesPickerSelectElem: HTMLSelectElement, centerUserLocationElem: HTMLButtonElement, lastUpdateInfoElem: HTMLElement }} domComponents
+ */
+
+/** @type {MapState} */
 const mapState = {
-  routes: Promise.resolve(undefined),
-  routesMap: Promise.resolve(undefined),
+  routes: {},
 
   lastUpdateTimestamp: new Date(),
 
@@ -46,60 +82,92 @@ const outboundBusLocation = L.icon({
 const fetchRoutesInfo = async () => {
   return fetch("./assets/routes.json")
     .then(response => response.json())
-    .then(routesInfo => {
-      return Object.values(routesInfo).map(route => {
+    .then(routesInfo => (
+      Object.values(routesInfo).forEach(route => {
         const routesNames = route[1].split(" - ").map(name => name.trim())
 
-        return {
+        mapState.routes[route[0]] = {
           routeNumber: route[0],
-          inBoundRouteName: routesNames[0],
-          outBoundRouteName: routesNames[1] || routesNames[0],
-          buses: {}
+          routeInfo: {
+            routeNumber: route[0],
+            inBoundRouteName: routesNames[0],
+            outBoundRouteName: routesNames[1] || routesNames[0],
+          },
+          routeMap: undefined,
+          busesMarkers: {},
         }
       })
-    })
+    ))
 }
 
-const fetchRoutesMap = async () => {
-  return fetch("./assets/routesMap.json")
+const fetchRoutesMap = () => {
+  const routesMap = fetch("./assets/routesMap.json")
     .then(response => response.json())
-    .then(routesInfo => {
+    .then(routesGeoJSON => {
 
-      const geoJsonMaps = routesInfo.features.reduce((geoJsonMaps, feature) => {
+      // Group map traces by route Number
+      const groupedRoutes = {};
+
+      Object.keys(routesGeoJSON.features).forEach(featureId => {
+        const feature = routesGeoJSON.features[featureId];
         const routeNumber = feature.properties?.Name?.split("_")[0];
 
-        if (!geoJsonMaps[routeNumber]) {
-          geoJsonMaps[routeNumber] = {
-            type: "FeatureCollection",
-            features: []
-          };
+        groupedRoutes[routeNumber] = groupedRoutes[routeNumber] || {
+          type: "FeatureCollection",
+          features: []
         }
 
-        geoJsonMaps[routeNumber].features.push(feature);
-        return geoJsonMaps;
-      }, {})
+        groupedRoutes[routeNumber].features.push(feature);
+      })
 
-      const layersMap = Object.keys(geoJsonMaps).reduce((layersMap, routeNumber) => {
-
-        layersMap[routeNumber] = L.geoJSON(geoJsonMaps[routeNumber], {
-          style: function (feature) {
-            const styleUrl = feature.properties?.styleUrl || '';
-            let color = '#0000ff'; // default blue
-            if (styleUrl.includes('red')) color = '#ff0000';
-            return { color, weight: 3 };
-          }
-        });
-
-        return layersMap;
-
-      }, {})
-
-      return layersMap;
+      return groupedRoutes
     })
+
+  // Add a promise of the Layer to each route in the mapState
+  Object.keys(mapState.routes).forEach(routeNumber => {
+    mapState.routes[routeNumber].routeMap = routesMap.then(routesMap => {
+      const routeMap = routesMap[routeNumber];
+
+      return L.geoJSON(routeMap, {
+        style: { color: '#9B59B695', weight: 2 }
+      })
+    })
+  })
+}
+
+const fetchBusesLocation = async () => {
+  return Promise.all(Object.keys(mapState.routes).map(async routeNumber => {
+    if (mapState.pickerSelectedRoute != undefined && mapState.pickerSelectedRoute != routeNumber) {
+      mapState.routes[routeNumber].busesLocations = {};
+      return
+    }
+
+    const busesOnRouteInfo = await (await fetch(`https://mobibus-gateway.ndrive.com/busLocation/${routeNumber}`, {
+      method: 'GET',
+      headers: {
+        'apikey': 'XfBl068e3CQLECHKTwuzH0IYG6q4AMQaxwghm7clCJi036Y/xNxHKA=='
+      }
+    })).json()
+
+    const buses = {};
+
+    busesOnRouteInfo.forEach(busInfo => {
+      buses[busInfo.busId] = {
+        lat: busInfo.lat,
+        lon: busInfo.lon,
+        direction: busInfo.direction,
+        busId: busInfo.busId
+      }
+    })
+
+    mapState.routes[routeNumber].busesLocations = buses
+
+    return
+  }))
 }
 
 const prepareDOM = () => {
-  const routesNumbers = mapState.routes.map(route => route.routeNumber);
+  const routesNumbers = Object.keys(mapState.routes);
 
   const { routesPickerSelectElem, centerUserLocationElem } = mapState.domComponents
 
@@ -115,6 +183,7 @@ const prepareDOM = () => {
     const selectedRoute = event.target.value;
     mapState.pickerSelectedRoute = selectedRoute == "all" ? undefined : selectedRoute;
     mapState.selectedBusNumber = undefined;
+    drawBuses();
     drawHelpingRoute();
   })
 
@@ -157,90 +226,70 @@ const drawUserLocation = async () => {
   )
 }
 
-const drawBuses = async () => {
-  const routes = mapState.routes
+const drawBuses = () => {
+  Object.keys(mapState.routes).forEach(routeNumber => {
+    const route = mapState.routes[routeNumber];
+    const routeInfo = route.routeInfo;
 
-  const newRoutes = routes.map(async route => {
-    if (mapState.pickerSelectedRoute != undefined && mapState.pickerSelectedRoute != route.routeNumber) {
-      Object.keys(route.buses).forEach(busId => {
-        map.removeLayer(route.buses[busId].marker)
+    // Clear from the map buses that are no longer in the route
+    const newBusesIds = Object.keys(route.busesLocations);
+    Object.keys(route.busesMarkers).forEach(oldBusId => {
+      if (!newBusesIds.includes(oldBusId)) {
+        map.removeLayer(route.busesMarkers[oldBusId])
+      }
+    })
+
+    // Hide all other buses if a route is selected in the picker
+    if (mapState.pickerSelectedRoute && mapState.pickerSelectedRoute !== routeNumber) {
+      Object.keys(route.busesMarkers).forEach(hiddenBus => {
+        map.removeLayer(route.busesMarkers[hiddenBus])
       })
-
-      return route
+      return;
     }
 
-    const busesOnRouteInfo = await (await fetch(`https://mobibus-gateway.ndrive.com/busLocation/${route.routeNumber}`, {
-      method: 'GET',
-      headers: {
-        'apikey': 'XfBl068e3CQLECHKTwuzH0IYG6q4AMQaxwghm7clCJi036Y/xNxHKA=='
-      }
-    })).json()
-
-    const buses = {};
-
-    busesOnRouteInfo.forEach(busInfo => {
-      const bus = {
-        lat: busInfo.lat,
-        lon: busInfo.lon,
-        direction: busInfo.direction
-      }
+    // Create/edit markers for each bus in the route
+    Object.keys(route.busesLocations).forEach(busId => {
+      const bus = route.busesLocations[busId];
 
       var marker;
-      if (route.buses[busInfo.busId] != undefined) {
-        marker = route.buses[busInfo.busId].marker
+      if (route.busesMarkers[busId] != undefined) {
+        marker = route.busesMarkers[busId]
       } else {
-        marker = L.marker([bus.lat, bus.lon], { icon: bus.direction == 1 ? outboundBusLocation : inboundBusLocation });
+        marker = L.marker([bus.lat, bus.lon], { icon: bus.direction === 1 ? outboundBusLocation : inboundBusLocation });
 
-        const destination = bus.direction == 1 ? route.outBoundRouteName : route.inBoundRouteName
+        const destination = bus.direction === 1 ? routeInfo.outBoundRouteName : routeInfo.inBoundRouteName
 
-        marker.bindTooltip(`${route.routeNumber} - ${destination}`, {
+        marker.bindTooltip(`${routeNumber} - ${destination}`, {
           permanent: false,
           direction: "bottom"
         });
 
         marker.on('click', _ => {
-          if (mapState.selectedBusNumber === busInfo.busId) {
+          if (mapState.selectedBusNumber === busId) {
             mapState.selectedBusNumber = undefined;
+            drawBuses();
             drawHelpingRoute();
           } else {
-            mapState.selectedBusNumber = busInfo.busId;
-            drawHelpingRoute(route.routeNumber);
+            mapState.selectedBusNumber = busId;
+            drawBuses()
+            drawHelpingRoute(routeNumber);
           }
-
         });
+
+        route.busesMarkers[busId] = marker;
       }
 
       marker.setOpacity(1.0);
-      if (mapState.selectedBusNumber && mapState.selectedBusNumber !== busInfo.busId) {
+      if (mapState.selectedBusNumber && mapState.selectedBusNumber !== busId) {
         marker.setOpacity(0.3);
       }
 
       marker.setLatLng([bus.lat, bus.lon])
-      bus.marker = marker
-
       marker.addTo(map);
-      buses[busInfo.busId] = bus
     })
-
-    // Clear from the map buses that are no longer in the route
-    const newBusesIds = Object.keys(buses);
-    Object.keys(route.buses).forEach(oldBusId => {
-      if (!newBusesIds.includes(oldBusId)) {
-        map.removeLayer(route.buses[oldBusId].marker)
-      }
-    })
-
-    route.buses = buses
-
-    return route
   })
 
-  return Promise.all(newRoutes)
-    .then((newRoutes) => {
-      mapState.lastUpdateTimestamp = new Date()
-
-      mapState.routes = newRoutes
-    })
+  mapState.lastUpdateTimestamp = new Date()
 }
 
 const drawHelpingRoute = async (routeNumber) => {
@@ -251,10 +300,10 @@ const drawHelpingRoute = async (routeNumber) => {
     mapState.helpingRouteLayer = undefined;
   }
 
-  const routesMap = (await mapState.routesMap);
+  const routeMap = await mapState.routes[routeToDraw]?.routeMap;
 
-  if (routeToDraw && routesMap) {
-    mapState.helpingRouteLayer = routesMap[routeToDraw];
+  if (routeToDraw && routeMap) {
+    mapState.helpingRouteLayer = routeMap;
     mapState.helpingRouteLayer?.addTo(map);
   }
 }
@@ -281,20 +330,20 @@ const main = async () => {
 
   drawUserLocation()
 
-  mapState.routes = await fetchRoutesInfo()
-  mapState.routesMap = fetchRoutesMap()
+  await fetchRoutesInfo()
+  fetchRoutesMap()
 
   prepareDOM()
-
 
   updateLastUpdateInfo()
 
   while (true) {
     try {
-      await drawBuses();
+      await fetchBusesLocation();
+      drawBuses();
     } catch (_) { /* To avoid kill the function after a network drop */ }
 
-    await new Promise(r => setTimeout(r, UPDATES_PER_SECOND * 1000));
+    await new Promise(r => setTimeout(r, 1 / UPDATES_PER_SECOND * 1000));
   }
 }
 
