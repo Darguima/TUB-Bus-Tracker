@@ -129,7 +129,7 @@ const fetchRoutesMap = () => {
       const routeMap = routesMap[routeNumber];
 
       return L.geoJSON(routeMap, {
-        style: { color: '#9B59B695', weight: 2 }
+        style: { color: '#9B59B6', weight: 2 }
       })
     })
   })
@@ -161,6 +161,8 @@ const fetchBusesLocation = async () => {
     })
 
     mapState.routes[routeNumber].busesLocations = buses
+
+    drawBus(routeNumber)
 
     return
   }))
@@ -226,70 +228,70 @@ const drawUserLocation = async () => {
   )
 }
 
-const drawBuses = () => {
-  Object.keys(mapState.routes).forEach(routeNumber => {
-    const route = mapState.routes[routeNumber];
-    const routeInfo = route.routeInfo;
+const drawBus = (routeNumber) => {
+  const route = mapState.routes[routeNumber];
+  const routeInfo = route.routeInfo;
 
-    // Clear from the map buses that are no longer in the route
-    const newBusesIds = Object.keys(route.busesLocations);
-    Object.keys(route.busesMarkers).forEach(oldBusId => {
-      if (!newBusesIds.includes(oldBusId)) {
-        map.removeLayer(route.busesMarkers[oldBusId])
-      }
-    })
-
-    // Hide all other buses if a route is selected in the picker
-    if (mapState.pickerSelectedRoute && mapState.pickerSelectedRoute !== routeNumber) {
-      Object.keys(route.busesMarkers).forEach(hiddenBus => {
-        map.removeLayer(route.busesMarkers[hiddenBus])
-      })
-      return;
+  // Clear from the map buses that are no longer in the route
+  const newBusesIds = Object.keys(route.busesLocations);
+  Object.keys(route.busesMarkers).forEach(oldBusId => {
+    if (!newBusesIds.includes(oldBusId)) {
+      map.removeLayer(route.busesMarkers[oldBusId])
     }
-
-    // Create/edit markers for each bus in the route
-    Object.keys(route.busesLocations).forEach(busId => {
-      const bus = route.busesLocations[busId];
-
-      var marker;
-      if (route.busesMarkers[busId] != undefined) {
-        marker = route.busesMarkers[busId]
-      } else {
-        marker = L.marker([bus.lat, bus.lon], { icon: bus.direction === 1 ? outboundBusLocation : inboundBusLocation });
-
-        const destination = bus.direction === 1 ? routeInfo.outBoundRouteName : routeInfo.inBoundRouteName
-
-        marker.bindTooltip(`${routeNumber} - ${destination}`, {
-          permanent: false,
-          direction: "bottom"
-        });
-
-        marker.on('click', _ => {
-          if (mapState.selectedBusNumber === busId) {
-            mapState.selectedBusNumber = undefined;
-            drawBuses();
-            drawHelpingRoute();
-          } else {
-            mapState.selectedBusNumber = busId;
-            drawBuses()
-            drawHelpingRoute(routeNumber);
-          }
-        });
-
-        route.busesMarkers[busId] = marker;
-      }
-
-      marker.setOpacity(1.0);
-      if (mapState.selectedBusNumber && mapState.selectedBusNumber !== busId) {
-        marker.setOpacity(0.3);
-      }
-
-      marker.setLatLng([bus.lat, bus.lon])
-      marker.addTo(map);
-    })
   })
 
-  mapState.lastUpdateTimestamp = new Date()
+  // Hide all other buses if a route is selected in the picker
+  if (mapState.pickerSelectedRoute && mapState.pickerSelectedRoute !== routeNumber) {
+    Object.keys(route.busesMarkers).forEach(hiddenBus => {
+      map.removeLayer(route.busesMarkers[hiddenBus])
+    })
+    return;
+  }
+
+  // Create/edit markers for each bus in the route
+  Object.keys(route.busesLocations).forEach(busId => {
+    const bus = route.busesLocations[busId];
+
+    var marker;
+    if (route.busesMarkers[busId] != undefined) {
+      marker = route.busesMarkers[busId]
+    } else {
+      marker = L.marker([bus.lat, bus.lon], { icon: bus.direction === 1 ? outboundBusLocation : inboundBusLocation });
+
+      const destination = bus.direction === 1 ? routeInfo.outBoundRouteName : routeInfo.inBoundRouteName
+
+      marker.bindTooltip(`${routeNumber} - ${destination}`, {
+        permanent: false,
+        direction: "bottom"
+      });
+
+      marker.on('click', _ => {
+        if (mapState.selectedBusNumber === busId) {
+          mapState.selectedBusNumber = undefined;
+          drawBuses();
+          drawHelpingRoute();
+        } else {
+          mapState.selectedBusNumber = busId;
+          drawBuses()
+          drawHelpingRoute(routeNumber);
+        }
+      });
+
+      route.busesMarkers[busId] = marker;
+    }
+
+    marker.setOpacity(1.0);
+    if (mapState.selectedBusNumber && mapState.selectedBusNumber !== busId) {
+      marker.setOpacity(0.3);
+    }
+
+    marker.setLatLng([bus.lat, bus.lon])
+    marker.addTo(map);
+  })
+}
+
+const drawBuses = () => {
+  Object.keys(mapState.routes).forEach(drawBus)
 }
 
 const drawHelpingRoute = async (routeNumber) => {
@@ -340,7 +342,7 @@ const main = async () => {
   while (true) {
     try {
       await fetchBusesLocation();
-      drawBuses();
+      mapState.lastUpdateTimestamp = new Date()
     } catch (_) { /* To avoid kill the function after a network drop */ }
 
     await new Promise(r => setTimeout(r, 1 / UPDATES_PER_SECOND * 1000));
