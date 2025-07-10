@@ -100,7 +100,7 @@ $ git clone https://github.com/darguima/TUB-Bus-Tracker.git
 You can use any HTTP server to serve the files. For example, using Python's built-in HTTP server:
 
 ```bash
-$ python3 -m http.server
+$ python3 -m http.server -d src
 ```
 
 And now access `localhost:8000`.
